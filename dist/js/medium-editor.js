@@ -1881,7 +1881,8 @@ MediumEditor.extensions = {};
                 stop = false,
                 nextCharIndex,
                 allowRangeToStartAtEndOfNode = false,
-                lastTextNode = null;
+                lastTextNode = null,
+                lastElementNode = null;
 
             // When importing selection, the start of the selection may lie at the end of an element
             // or at the beginning of an element.  Since visually there is no difference between these 2
@@ -1923,6 +1924,12 @@ MediumEditor.extensions = {};
                         // However, we should keep a reference to this node in case there aren't any more
                         // text nodes after this, so that we have somewhere to import the selection to
                         else {
+                            // also track the last element node, to use the contentEditable cursor fix
+                            // https://stackoverflow.com/questions/18985261/cursor-in-wrong-place-in-contenteditable
+                            if (node.parentNode && node.parentNode.contentEditable === 'false') {
+                                lastElementNode = node.parentNode;
+                            }
+
                             lastTextNode = node;
                         }
                     }
@@ -1971,9 +1978,24 @@ MediumEditor.extensions = {};
             // If we've gone through the entire text but didn't find the beginning of a text node
             // to make the selection start at, we should fall back to starting the selection
             // at the END of the last text node we found
-            if (!foundStart && lastTextNode) {
-                range.setStart(lastTextNode, lastTextNode.length);
-                range.setEnd(lastTextNode, lastTextNode.length);
+            if (!foundStart && (lastTextNode || lastElementNode)) {
+                if (lastElementNode) {
+                    // This fixes issue where backspace on nested contentEditable=false throws
+                    // the cursor wildly in Chrome
+                    // https://stackoverflow.com/questions/18985261/cursor-in-wrong-place-in-contenteditable
+
+                    // create a blank space text node
+                    var spacer = document.createTextNode('\u00A0');
+
+                    // insert it after the last element node
+                    lastElementNode.parentNode.insertBefore(spacer, lastElementNode.nextSibling);
+
+                    // then set the range
+                    range.setStart(lastElementNode.nextSibling, 0);
+                } else {
+                    range.setStart(lastTextNode, lastTextNode.length);
+                    range.setEnd(lastTextNode, lastTextNode.length);
+                }
             }
 
             if (typeof selectionState.emptyBlocksIndex !== 'undefined') {
@@ -3788,8 +3810,8 @@ MediumEditor.extensions = {};
                 // and provide similar access to a `fa-` icon default.
                 template.push(
                     '<div class="medium-editor-toolbar-form-row">',
-                    '<input type="checkbox" class="medium-editor-toolbar-anchor-button">',
-                    '<label>',
+                    '<input type="checkbox" class="medium-editor-toolbar-anchor-button" id="medium-editor-toolbar-anchor-button-field-' + this.getEditorId() + '">',
+                    '<label for="medium-editor-toolbar-anchor-button-field-' + this.getEditorId() + '">',
                     this.customClassOptionText,
                     '</label>',
                     '</div>'
